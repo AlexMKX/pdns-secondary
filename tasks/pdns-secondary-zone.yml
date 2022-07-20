@@ -1,0 +1,23 @@
+- block:
+  - name: "Get {{item.name}} zone info"
+    uri:
+      url: "{{dns_api}}/zones/{{item.name}}"
+      headers:
+        X-API-Key: "{{dns_api_key}}"
+      status_code: [ 200,404 ]
+    register: zone
+  - name: "Create {{item.name}} zone"
+    uri:
+      url: "{{dns_api}}/zones"
+      method: POST
+      body_format: json
+      body:
+        name: "{{ item.name }}."
+        kind: "SLAVE"
+        masters:
+          - "{{item.master}}"
+      headers:
+        X-API-Key: "{{dns_api_key}}"
+      status_code: [ 200,201 ]
+    register: zone
+    when: zone.status == 404

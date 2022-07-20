@@ -1,0 +1,44 @@
+- hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - set_fact:
+#        success_file: "/tmp/success"
+        nft_table_name: "nat-outer-dns"
+#    - file:
+#        path: "{{success_file}}"
+#        state: absent
+    - docker_container:
+        name: outer-dns-pdns-auth
+      register: container_auth
+    - set_fact:
+        dns_server: "{{container_auth.container['NetworkSettings']['Networks']['outer-dns_internal']['IPAddress']}}"
+    - set_fact:
+        domains: "{{ lookup('template', '/domains.yml')|from_yaml }}"
+    - name: checking the SOA for {{item.name}} at {{dns_server}}
+      shell:
+        cmd: "host -t SOA {{item.name}} {{dns_server}}"
+      register: host_result
+      retries: 20
+      delay: 5
+      until: host_result.rc == 0
+      with_items: "{{domains}}"
+    - shell:
+        cmd: "ip --json ro get default 1.1.1.1"
+      register: ip_result
+    - set_fact:
+        default_if: "{{ip_result.stdout| from_json|json_query('[0].dev')}}"
+    - shell:
+        cmd: "nft -j list tables"
+      register: nft_tables
+    - set_fact:
+        nft_table: "{{nft_tables.stdout|from_json | json_query('nftables[*].table.name')}}"
+    - shell:
+        cmd: "nft flush table {{nft_table_name}}"
+      when: 'nft_table_name|string in nft_table'
+    - template:
+        src: "/nft.rules.j2"
+        dest: "/tmp/nft.rules"
+    - shell:
+        cmd: "nft -f /tmp/nft.rules"
+

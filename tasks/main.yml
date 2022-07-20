@@ -1,0 +1,64 @@
+- set_fact:
+    target_dir: "/srv/outer-dns"
+    dns_api_key: "{{ lookup('ansible.builtin.password','/dev/null chars=hexdigits length=32') }}"
+- copy:
+    content: "{{dns_api_key}}"
+    dest: "{{target_dir}}/dns-api-key"
+
+#- shell:
+#    cmd: "ansible-galaxy collection install community.docker"
+#  delegate_to: localhost
+- copy:
+    src: "files/"
+    dest: "{{target_dir}}/"
+- apt:
+    name: [ "ansible", "docker", "docker-compose" , "nftables" ]
+    state: present
+- modprobe:
+    name: nf_tables
+    state: present
+- slurp:
+    src: "{{target_dir}}/dns-api-key"
+  register: dns_api_key_temp
+- set_fact:
+    dns_api_key: "{{ dns_api_key_temp.content | b64decode }}"
+
+- template:
+    src: "files/pdns.conf.j2"
+    dest: "{{target_dir}}/pdns.conf.d/pdns.conf"
+- slurp:
+    src: "{{target_dir}}/dns-api-key"
+  register: dns_api_key_temp
+
+- set_fact:
+    dns_api_key: "{{ dns_api_key_temp.content | b64decode }}"
+- copy:
+    content: "{{domains| to_nice_yaml}}"
+    dest: "{{target_dir}}/domains.yml"
+- docker_compose:
+    project_name: "outer-dns"
+    project_src: "{{target_dir}}/"
+    state: absent
+    remove_volumes: true
+    remove_orphans: true
+
+- docker_compose:
+    project_name: "outer-dns"
+    project_src: "{{target_dir}}/"
+    restarted: yes
+  register: result
+
+- set_fact:
+    dns_api: "http://{{result['services']['pdns-auth']['outer-dns-pdns-auth']['networks']['outer-dns_internal']['IPAddress']}}:8081/api/v1/servers/localhost"
+- include_tasks: pdns-secondary-zone.yml
+  with_items:
+    - "{{domains}}"
+
+- docker_container_info:
+    name: "outer-dns_onboot_1"
+  register: result
+  until: "result['container']['State']['Status']!='running'"
+  retries: 20
+- fail:
+    msg: "Docker container 'outer-dns_onboot_1' failed to provision firewall"
+  when: "result['container']['State']['ExitCode']!=0"

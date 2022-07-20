@@ -1,0 +1,6 @@
+table ip nat-outer-dns {
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+		iif "{{default_if}}" meta l4proto { tcp, udp } th dport 53 dnat to {{dns_server}}
+}
+}

@@ -1,0 +1,33 @@
+version: "3.4"
+networks:
+  internal:
+services:
+  pdns-auth:
+    container_name: "outer-dns-pdns-auth"
+    restart: unless-stopped
+    networks:
+      internal:
+    image: powerdns/pdns-auth-master
+    expose:
+      - 53/tcp
+      - 53/udp
+    volumes:
+      - "./pdns.conf.d:/etc/powerdns/pdns.d"
+      - "powerdns-data:/var/lib/powerdns"
+  onboot:
+    depends_on:
+      - pdns-auth
+    network_mode: "host"
+    build:
+      context: ./onboot
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./onboot/onboot.yml:/onboot.yml"
+      - "./domains.yml:/domains.yml"
+      - "./nft.rules.j2:/nft.rules.j2"
+    restart: "no"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+volumes:
+  powerdns-data:
